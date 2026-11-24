@@ -1,0 +1,2697 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Körschema Studio</title>
+
+  <!-- Google Font: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- React 18, ReactDOM 18, Babel standalone & ExcelJS via jsdelivr -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.2/babel.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Tydlig styling för Excel-förhandsvisningen i Steg 4 */
+    .excel-sheet-table {
+      width: 100%;
+      min-width: 1040px;
+      border-collapse: collapse;
+      font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+      font-size: 13px;
+      color: #0f172a;
+    }
+
+    .excel-sheet-table th,
+    .excel-sheet-table td {
+      border: 1px solid #808080;
+      padding: 6px 8px;
+      vertical-align: middle;
+      text-align: left;
+    }
+
+    .excel-banner {
+      background-color: #595959;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 10px 10px;
+    }
+
+    .excel-th {
+      background-color: #595959;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 12.5px;
+    }
+
+    .excel-prog {
+      background-color: #fac090;
+      color: #0f172a;
+    }
+
+    .excel-enter {
+      background-color: #d8e4bc;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .excel-exit {
+      background-color: #e6b8b7;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    .excel-mic-cell {
+      background-color: #d8e4bc;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    .excel-buffer-cell {
+      background-color: #ffffff;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+  <div id="root">
+    <!-- Fallback som visas om externt CDN tar tid eller blockeras -->
+    <div id="cdn-fallback" class="max-w-xl mx-auto my-12 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+      <h2 class="text-lg font-bold text-slate-900 mb-2">Körschema Studio laddas...</h2>
+      <p class="text-sm text-slate-600 mb-4">
+        Applikationen använder React 18, Babel och ExcelJS via CDN. Om sidan inte visas inom några sekunder kan externa skript vara blockerade eller långsamma.
+      </p>
+      <button
+        type="button"
+        onclick="window.location.reload()"
+        class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+      >
+        Ladda om sidan
+      </button>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      setTimeout(function () {
+        if (!window.React || !window.ReactDOM || !window.Babel) {
+          var fb = document.getElementById('cdn-fallback');
+          if (fb) {
+            fb.innerHTML =
+              '<h2 class="text-lg font-bold text-rose-700 mb-2">Kunde inte ladda externa bibliotek (CDN)</h2>' +
+              '<p class="text-sm text-slate-600 mb-4">Kontrollera internetanslutningen eller om brandvägg blockerar <code>cdn.jsdelivr.net</code>. ExcelJS-status: <strong>' +
+              (window.ExcelJS ? 'Tillgänglig' : 'Ej laddad') +
+              '</strong>.</p>' +
+              '<button type="button" onclick="window.location.reload()" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold">Försök igen</button>';
+          }
+        }
+      }, 3500);
+    });
+  </script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // =========================================================================
+    // KONSTANTER & STARTLÄGE (PRODUKTION UTAN EXEMPELDATA)
+    // =========================================================================
+    const STORAGE_KEY = 'korschema_studio_prod_v1';
+
+    const STEPS = [
+      { id: 1, label: '1. Sändningsbrief' },
+      { id: 2, label: '2. Deltagarlista' },
+      { id: 3, label: '3. Körschema' },
+      { id: 4, label: '4. Granska & Exportera' },
+    ];
+
+    const RECORDING_OPTIONS = [
+      'Ja, 14 dagar',
+      'Ja, 30 dagar',
+      'Ja, mer än 30 dagar',
+      'Nej',
+    ];
+
+    const PRESENTATION_PRESETS = [
+      'Master PPT',
+      'PowerPoint',
+      'Menti',
+      'Video/klipp',
+    ];
+
+    // Beräknar dagens lokala datum (YYYY-MM-DD), närmsta halvtimme som starttid
+    // (t.ex. 13:09 -> 13:00, 13:16 -> 13:30) samt sluttid 60 minuter senare.
+    function getDefaultScheduleDefaults() {
+      const now = new Date();
+      const totalMinutes = now.getHours() * 60 + now.getMinutes();
+      const roundedStartMinutes = Math.round(totalMinutes / 30) * 30;
+
+      const startDateObj = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        0,
+        roundedStartMinutes,
+        0,
+        0
+      );
+      const endDateObj = new Date(startDateObj.getTime() + 60 * 60 * 1000);
+
+      const date = [
+        startDateObj.getFullYear(),
+        String(startDateObj.getMonth() + 1).padStart(2, '0'),
+        String(startDateObj.getDate()).padStart(2, '0'),
+      ].join('-');
+
+      const startTime = `${String(startDateObj.getHours()).padStart(2, '0')}:${String(
+        startDateObj.getMinutes()
+      ).padStart(2, '0')}`;
+
+      const endTime = `${String(endDateObj.getHours()).padStart(2, '0')}:${String(
+        endDateObj.getMinutes()
+      ).padStart(2, '0')}`;
+
+      return { date, startTime, endTime };
+    }
+
+    function createEmptyData() {
+      const defaults = getDefaultScheduleDefaults();
+      return {
+        brief: {
+          templateTitle: 'Quickchannel körschema på 4F',
+          title: '',
+          date: defaults.date,
+          startTime: defaults.startTime,
+          endTime: defaults.endTime,
+          handler: '',
+          phone: '',
+          email: '',
+          chatEnabled: 'Ja',
+          recordingAvailable: 'Ja, 30 dagar',
+          description: '',
+        },
+        participants: [],
+        events: [],
+      };
+    }
+
+    // =========================================================================
+    // DATUM- & TIDSBERÄKNINGAR
+    // =========================================================================
+    function parseHHMM(timeStr) {
+      if (!timeStr || !/^\d{1,2}:\d{2}$/.test(timeStr.trim())) {
+        const fallback = getDefaultScheduleDefaults().startTime;
+        const [fh, fm] = fallback.split(':').map(Number);
+        return fh * 60 + fm;
+      }
+      const [h, m] = timeStr.trim().split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return 13 * 60;
+      return h * 60 + m;
+    }
+
+    function formatMinutesHHMM(totalMinutes) {
+      const safe = Math.max(0, Math.round(totalMinutes));
+      const dayOffset = Math.floor(safe / 1440);
+      const minsOfDay = safe % 1440;
+      const h = Math.floor(minsOfDay / 60);
+      const m = minsOfDay % 60;
+      return {
+        hhmm: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+        dayOffset,
+      };
+    }
+
+    function formatSwedishDateDisplay(dateStr, startTime, endTime) {
+      const months = [
+        'januari', 'februari', 'mars', 'april', 'maj', 'juni',
+        'juli', 'augusti', 'september', 'oktober', 'november', 'december',
+      ];
+      let datePart = dateStr || '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) {
+        const [y, mo, d] = dateStr.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, mo - 1, d));
+        if (!Number.isNaN(dt.getTime())) {
+          datePart = `${dt.getUTCDate()} ${months[dt.getUTCMonth()]}`;
+        }
+      }
+      const timePart =
+        startTime && endTime
+          ? `${startTime}–${endTime}`
+          : startTime || endTime || '';
+      return [datePart, timePart].filter(Boolean).join(' ');
+    }
+
+    function computePlannedBroadcastDuration(dateStr, startTime, endTime) {
+      const startMin = parseHHMM(startTime);
+      const endMin = parseHHMM(endTime);
+
+      let diffMinutes = endMin - startMin;
+      let nextDay = false;
+
+      if (diffMinutes < 0) {
+        diffMinutes += 1440;
+        nextDay = true;
+      }
+
+      const hours = Math.floor(diffMinutes / 60);
+      const mins = diffMinutes % 60;
+
+      let humanText = `${diffMinutes} min`;
+      if (hours > 0 && mins > 0) {
+        humanText = `${hours} tim ${mins} min (${diffMinutes} min)`;
+      }
+
+      return {
+        totalMinutes: diffMinutes,
+        hours,
+        minutes: mins,
+        nextDay,
+        humanText,
+        endMinutesAbsolute: startMin + diffMinutes,
+      };
+    }
+
+    function analyzeScheduleAndMics(brief, participants, events) {
+      const participantById = new Map(participants.map((p) => [p.id, p]));
+      const micByParticipantId = new Map();
+      const appearanceOrder = [];
+      let nextStudioMicNumber = 1;
+
+      // 1. Tilldela MIK 1, MIK 2 osv. till deltagare "På plats" i den ordning de först dyker upp i körschemat
+      events.forEach((ev) => {
+        const ids = Array.isArray(ev.speakerIds) ? ev.speakerIds : [];
+        ids.forEach((id) => {
+          const person = participantById.get(id);
+          if (!person) return;
+          if (!appearanceOrder.includes(id)) {
+            appearanceOrder.push(id);
+          }
+          if (person.mode === 'studio' && !micByParticipantId.has(id)) {
+            micByParticipantId.set(id, `MIK ${nextStudioMicNumber}`);
+            nextStudioMicNumber += 1;
+          }
+        });
+      });
+
+      // 2. Ge övriga deltagare "På plats" (som inte lagts in i schemat ännu) nästkommande MIK-nummer
+      participants.forEach((p) => {
+        if (p.mode === 'studio' && !micByParticipantId.has(p.id)) {
+          micByParticipantId.set(p.id, `MIK ${nextStudioMicNumber}`);
+          nextStudioMicNumber += 1;
+        }
+      });
+
+      // 3. Sortera deltagarlistan i programordning (följt av eventuella övriga deltagare)
+      const orderedParticipants = [];
+      const seen = new Set();
+      appearanceOrder.forEach((id) => {
+        const p = participantById.get(id);
+        if (p && !seen.has(id)) {
+          seen.add(id);
+          orderedParticipants.push({
+            ...p,
+            assignedMic: micByParticipantId.get(id) || '',
+          });
+        }
+      });
+      participants.forEach((p) => {
+        if (!seen.has(p.id)) {
+          seen.add(p.id);
+          orderedParticipants.push({
+            ...p,
+            assignedMic: micByParticipantId.get(p.id) || '',
+          });
+        }
+      });
+
+      let cursorMinutes = parseHHMM(brief.startTime);
+
+      const computedEvents = events.map((ev, index) => {
+        const validIds = (ev.speakerIds || []).filter((id) => participantById.has(id));
+        const speakers = validIds.map((id) => participantById.get(id));
+
+        // Samla unika MIK-nummer för deltagare "På plats" i denna händelse
+        const evMics = [];
+        validIds.forEach((id) => {
+          const mic = micByParticipantId.get(id);
+          if (mic && !evMics.includes(mic)) {
+            evMics.push(mic);
+          }
+        });
+        const autoMicText = evMics.join(' + ');
+
+        let startFormatted = '';
+        let endFormatted = '';
+        let startMin = null;
+        let endMin = null;
+        let durationMin = 0;
+
+        if (ev.type === 'program') {
+          durationMin = Math.max(0, Number(ev.durationMinutes) || 0);
+          startMin = cursorMinutes;
+          endMin = cursorMinutes + durationMin;
+          startFormatted = formatMinutesHHMM(startMin).hhmm;
+          endFormatted = formatMinutesHHMM(endMin).hhmm;
+          cursorMinutes = endMin;
+        }
+
+        return {
+          ...ev,
+          index,
+          speakers,
+          startMin,
+          endMin,
+          startFormatted,
+          endFormatted,
+          durationMin,
+          autoMicText,
+        };
+      });
+
+      const programEvents = computedEvents.filter((e) => e.type === 'program');
+      const totalProgramMinutes = programEvents.reduce((acc, e) => acc + e.durationMin, 0);
+      const scheduledEndFormatted = formatMinutesHHMM(cursorMinutes).hhmm;
+
+      return {
+        computedEvents,
+        micByParticipantId,
+        orderedParticipants,
+        programCount: programEvents.length,
+        totalProgramMinutes,
+        scheduledEndMinutes: cursorMinutes,
+        scheduledEndFormatted,
+      };
+    }
+
+    // =========================================================================
+    // ERROR BOUNDARY
+    // =========================================================================
+    class AppErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, errorMessage: '' };
+      }
+
+      static getDerivedStateFromError(error) {
+        return {
+          hasError: true,
+          errorMessage: error && error.message ? error.message : 'Ett oväntat fel uppstod.',
+        };
+      }
+
+      componentDidCatch(error, info) {
+        console.error('Körschema Studio fel:', error, info);
+      }
+
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="max-w-xl mx-auto my-12 bg-white border border-rose-200 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-rose-700 mb-2">Något gick fel i gränssnittet</h2>
+              <p className="text-sm text-slate-600 mb-4">{this.state.errorMessage}</p>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+                onClick={() => this.setState({ hasError: false, errorMessage: '' })}
+              >
+                Försök återställa vyn
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    // =========================================================================
+    // HUVUDKOMPONENT: KÖRSCHEMA STUDIO
+    // =========================================================================
+    function KorschemaStudioApp() {
+      const [activeStep, setActiveStep] = useState(1);
+
+      const [state, setState] = useState(() => {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (
+              parsed &&
+              parsed.brief &&
+              Array.isArray(parsed.participants) &&
+              Array.isArray(parsed.events)
+            ) {
+              return parsed;
+            }
+          }
+        } catch (e) {
+          // Ignorera lagringsfel
+        }
+        return createEmptyData();
+      });
+
+      const [advancedOpen, setAdvancedOpen] = useState(false);
+
+      // Steg 2: formulär för ny / redigerad deltagare
+      const [editingParticipantId, setEditingParticipantId] = useState(null);
+      const [partName, setPartName] = useState('');
+      const [partOrg, setPartOrg] = useState('');
+      const [partRole, setPartRole] = useState('');
+      const [partMode, setPartMode] = useState('studio');
+      const [partEmail, setPartEmail] = useState('');
+      const [partMobile, setPartMobile] = useState('');
+      const [partTechCheck, setPartTechCheck] = useState('');
+      const [partError, setPartError] = useState('');
+
+      // Steg 3: expanderat kort för inline-redigering
+      const [expandedEventId, setExpandedEventId] = useState(null);
+
+      // Drag-and-drop i Steg 3
+      const [draggedIndex, setDraggedIndex] = useState(null);
+      const [dragOverIndex, setDragOverIndex] = useState(null);
+
+      // Ångra-historik och toast
+      const [undoSnapshot, setUndoSnapshot] = useState(null);
+      const [toastMsg, setToastMsg] = useState('');
+      const [exportingXlsx, setExportingXlsx] = useState(false);
+
+      const undoTimerRef = useRef(null);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          // Ignorera lagringsfel
+        }
+      }, [state]);
+
+      function triggerToast(message, snapshotForUndo = null) {
+        if (undoTimerRef.current) {
+          clearTimeout(undoTimerRef.current);
+        }
+        setToastMsg(message);
+        setUndoSnapshot(snapshotForUndo);
+        undoTimerRef.current = setTimeout(() => {
+          setToastMsg('');
+          setUndoSnapshot(null);
+        }, 7000);
+      }
+
+      function handleUndo() {
+        if (!undoSnapshot) return;
+        setState(undoSnapshot);
+        setUndoSnapshot(null);
+        setToastMsg('');
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      }
+
+      function handleClearAll() {
+        const prev = JSON.parse(JSON.stringify(state));
+        setState(createEmptyData());
+        setEditingParticipantId(null);
+        setExpandedEventId(null);
+        resetParticipantForm();
+        setActiveStep(1);
+        triggerToast('All data har rensats till ett nytt utkast.', prev);
+      }
+
+      // Beräkningar
+      const plannedDuration = useMemo(
+        () =>
+          computePlannedBroadcastDuration(
+            state.brief.date,
+            state.brief.startTime,
+            state.brief.endTime
+          ),
+        [state.brief.date, state.brief.startTime, state.brief.endTime]
+      );
+
+      const swedishDateTimeText = useMemo(
+        () =>
+          formatSwedishDateDisplay(
+            state.brief.date,
+            state.brief.startTime,
+            state.brief.endTime
+          ),
+        [state.brief.date, state.brief.startTime, state.brief.endTime]
+      );
+
+      const scheduleAnalysis = useMemo(
+        () => analyzeScheduleAndMics(state.brief, state.participants, state.events),
+        [state.brief, state.participants, state.events]
+      );
+
+      // =====================================================================
+      // STEG 1: SÄNDNINGSBRIEF HANDLERS
+      // =====================================================================
+      function updateBriefField(field, value) {
+        setState((prev) => ({
+          ...prev,
+          brief: {
+            ...prev.brief,
+            [field]: value,
+          },
+        }));
+      }
+
+      // =====================================================================
+      // STEG 2: DELTAGARLISTA HANDLERS
+      // =====================================================================
+      function resetParticipantForm() {
+        setEditingParticipantId(null);
+        setPartName('');
+        setPartOrg('');
+        setPartRole('');
+        setPartMode('studio');
+        setPartEmail('');
+        setPartMobile('');
+        setPartTechCheck('');
+        setPartError('');
+      }
+
+      function handleSaveParticipant(e) {
+        e.preventDefault();
+        const trimmedName = partName.trim();
+        if (!trimmedName) {
+          setPartError('Ange deltagarens namn.');
+          return;
+        }
+        const trimmedEmail = partEmail.trim();
+        const trimmedMobile = partMobile.trim();
+        const trimmedTechCheck = partTechCheck.trim();
+
+        if (partMode === 'remote' && !trimmedEmail && !trimmedMobile) {
+          setPartError('Ange e-postadress eller mobilnummer för deltagare på distans.');
+          return;
+        }
+
+        setPartError('');
+
+        if (editingParticipantId) {
+          setState((prev) => ({
+            ...prev,
+            participants: prev.participants.map((p) =>
+              p.id === editingParticipantId
+                ? {
+                    ...p,
+                    name: trimmedName,
+                    organization: partOrg.trim(),
+                    role: partRole.trim(),
+                    mode: partMode,
+                    email: partMode === 'remote' ? trimmedEmail : '',
+                    mobile: partMode === 'remote' ? trimmedMobile : '',
+                    techCheck: partMode === 'remote' ? trimmedTechCheck : '',
+                  }
+                : p
+            ),
+          }));
+          resetParticipantForm();
+          triggerToast(`Uppdaterade ${trimmedName}.`);
+        } else {
+          const newPerson = {
+            id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: trimmedName,
+            organization: partOrg.trim(),
+            role: partRole.trim(),
+            mode: partMode,
+            email: partMode === 'remote' ? trimmedEmail : '',
+            mobile: partMode === 'remote' ? trimmedMobile : '',
+            techCheck: partMode === 'remote' ? trimmedTechCheck : '',
+          };
+          setState((prev) => ({
+            ...prev,
+            participants: [...prev.participants, newPerson],
+          }));
+          resetParticipantForm();
+          triggerToast(`La till ${trimmedName} i deltagarlistan.`);
+        }
+      }
+
+      function handleStartEditParticipant(person) {
+        setEditingParticipantId(person.id);
+        setPartName(person.name);
+        setPartOrg(person.organization || '');
+        setPartRole(person.role || '');
+        setPartMode(person.mode === 'remote' ? 'remote' : 'studio');
+        setPartEmail(person.email || '');
+        setPartMobile(person.mobile || '');
+        setPartTechCheck(person.techCheck || '');
+        setPartError('');
+      }
+
+      function handleDeleteParticipant(personId) {
+        const target = state.participants.find((p) => p.id === personId);
+        setState((prev) => ({
+          ...prev,
+          participants: prev.participants.filter((p) => p.id !== personId),
+          events: prev.events.map((ev) => ({
+            ...ev,
+            speakerIds: (ev.speakerIds || []).filter((id) => id !== personId),
+          })),
+        }));
+        if (editingParticipantId === personId) {
+          resetParticipantForm();
+        }
+        if (target) {
+          triggerToast(`Tog bort ${target.name} från deltagarlistan.`);
+        }
+      }
+
+      // =====================================================================
+      // STEG 3: KÖRSCHEMA HANDLERS
+      // =====================================================================
+      function handleQuickAddEvent(kind) {
+        const defaultSpeakers =
+          state.participants.length > 0 ? [state.participants[0].id] : [];
+        const firstName =
+          state.participants.length > 0
+            ? state.participants[0].name.split(' ')[0]
+            : 'Deltagare';
+
+        let created;
+        if (kind === 'program') {
+          created = {
+            id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'program',
+            title: 'Ny programpunkt',
+            durationMinutes: 5,
+            speakerIds: defaultSpeakers,
+            material: 'Master PPT',
+            extraNote: '',
+          };
+        } else if (kind === 'enter') {
+          created = {
+            id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'enter_exit',
+            action: 'enter',
+            title: `${firstName} på`,
+            durationMinutes: 0,
+            speakerIds: defaultSpeakers,
+            material: '',
+            extraNote: '',
+          };
+        } else {
+          created = {
+            id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'enter_exit',
+            action: 'exit',
+            title: `${firstName} av`,
+            durationMinutes: 0,
+            speakerIds: defaultSpeakers,
+            material: '',
+            extraNote: '',
+          };
+        }
+
+        setState((prev) => ({
+          ...prev,
+          events: [...prev.events, created],
+        }));
+        setExpandedEventId(created.id);
+      }
+
+      function handleUpdateEvent(eventId, patch) {
+        setState((prev) => ({
+          ...prev,
+          events: prev.events.map((ev) => (ev.id === eventId ? { ...ev, ...patch } : ev)),
+        }));
+      }
+
+      function handleToggleEventSpeaker(eventId, speakerId) {
+        setState((prev) => ({
+          ...prev,
+          events: prev.events.map((ev) => {
+            if (ev.id !== eventId) return ev;
+            const current = ev.speakerIds || [];
+            const nextSpeakers = current.includes(speakerId)
+              ? current.filter((id) => id !== speakerId)
+              : [...current, speakerId];
+
+            let nextTitle = ev.title;
+            if (ev.type === 'enter_exit') {
+              const names = nextSpeakers
+                .map((id) => state.participants.find((p) => p.id === id))
+                .filter(Boolean)
+                .map((p) => p.name.split(' ')[0]);
+              const label = names.length > 0 ? names.join(' + ') : 'Deltagare';
+              nextTitle = ev.action === 'enter' ? `${label} på` : `${label} av`;
+            }
+
+            return { ...ev, speakerIds: nextSpeakers, title: nextTitle };
+          }),
+        }));
+      }
+
+      function handleDeleteEvent(eventId) {
+        setState((prev) => ({
+          ...prev,
+          events: prev.events.filter((ev) => ev.id !== eventId),
+        }));
+        if (expandedEventId === eventId) {
+          setExpandedEventId(null);
+        }
+      }
+
+      function moveEventByOffset(index, offset) {
+        const targetIndex = index + offset;
+        if (targetIndex < 0 || targetIndex >= state.events.length) return;
+        setState((prev) => {
+          const copy = [...prev.events];
+          const [moved] = copy.splice(index, 1);
+          copy.splice(targetIndex, 0, moved);
+          return { ...prev, events: copy };
+        });
+      }
+
+      function handleDropOnEvent(targetIndex) {
+        if (draggedIndex === null || draggedIndex === targetIndex) {
+          setDraggedIndex(null);
+          setDragOverIndex(null);
+          return;
+        }
+        setState((prev) => {
+          const copy = [...prev.events];
+          const [moved] = copy.splice(draggedIndex, 1);
+          copy.splice(targetIndex, 0, moved);
+          return { ...prev, events: copy };
+        });
+        setDraggedIndex(null);
+        setDragOverIndex(null);
+      }
+
+      // =====================================================================
+      // CSV-RESERVEXPORT (OM EXCELJS INTE ÄR TILLGÄNGLIG)
+      // =========================================================================
+      function exportFallbackCsv() {
+        const rows = [
+          [state.brief.templateTitle || 'Quickchannel körschema på 4F'],
+          ['Namn på sändning (som publicerad)', state.brief.title || ''],
+          ['Datum och sändningstid', `${swedishDateTimeText} (${plannedDuration.humanText})`],
+          ['Ansvarig handläggare', state.brief.handler || ''],
+          ['Telefonnummer', state.brief.phone || ''],
+          ['Mailadress', state.brief.email || ''],
+          ['Chattfunktion (Ja/Nej)', state.brief.chatEnabled],
+          ['Ska inspelning vara tillgänglig? Hur länge?', state.brief.recordingAvailable],
+          [],
+          [
+            'Start',
+            'Slut',
+            'Min',
+            'Programpunkt',
+            'Vem/vilka talar under programpunkten',
+            'Presentationsmaterial för programpunkt (t.ex PPT eller Menti mm.)',
+            'Extra notering',
+            'Tekniska kommentarer och tid för anslutning',
+          ],
+        ];
+
+        scheduleAnalysis.computedEvents.forEach((ev) => {
+          rows.push([
+            ev.type === 'program' ? ev.startFormatted : '',
+            ev.type === 'program' ? ev.endFormatted : '',
+            ev.type === 'program' ? String(ev.durationMin) : '',
+            ev.title || '',
+            ev.speakers.map((s) => s.name).join(', '),
+            ev.type === 'program' ? ev.material || '' : '',
+            ev.autoMicText || '',
+            ev.extraNote || '',
+          ]);
+        });
+
+        const csvContent =
+          '\uFEFF' +
+          rows
+            .map((r) =>
+              r.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')
+            )
+            .join('\r\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const cleanTitle = (state.brief.title || 'Korschema')
+          .trim()
+          .replace(/[\\/:*?"<>|]+/g, '')
+          .replace(/\s+/g, '_');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${cleanTitle}_${state.brief.date || 'schema'}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        triggerToast('Exporterade CSV-reservfil för Excel.');
+      }
+
+      // =====================================================================
+      // STEG 4: EXCEL-EXPORT (.XLSX) VIA EXCELJS (3 FLIKAR)
+      // =====================================================================
+      async function handleExportExcel() {
+        if (!window.ExcelJS) {
+          exportFallbackCsv();
+          return;
+        }
+
+        setExportingXlsx(true);
+        try {
+          const workbook = new window.ExcelJS.Workbook();
+          workbook.creator = 'Körschema Studio';
+          workbook.created = new Date();
+
+          const thinBorder = {
+            top: { style: 'thin', color: { argb: 'FF808080' } },
+            left: { style: 'thin', color: { argb: 'FF808080' } },
+            bottom: { style: 'thin', color: { argb: 'FF808080' } },
+            right: { style: 'thin', color: { argb: 'FF808080' } },
+          };
+
+          const headerFill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF595959' }, // Mörkgrå (#595959)
+          };
+
+          const progFill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFAC090' }, // Ljusorange (#FAC090)
+          };
+
+          const enterFill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFD8E4BC' }, // Ljusgrön (#D8E4BC)
+          };
+
+          const exitFill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE6B8B7' }, // Ljusröd (#E6B8B7)
+          };
+
+          const whiteFill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFFFFF' },
+          };
+
+          const headerFont = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+          const bodyFont = { name: 'Calibri', size: 11, bold: false, color: { argb: 'FF000000' } };
+          const boldFont = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } };
+
+          // -------------------------------------------------------------------
+          // FLIK 1: KÖRSCHEMA
+          // -------------------------------------------------------------------
+          const ws1 = workbook.addWorksheet('Körschema');
+          ws1.columns = [
+            { width: 9 },
+            { width: 9 },
+            { width: 9 },
+            { width: 40 },
+            { width: 34 },
+            { width: 38 },
+            { width: 30 },
+            { width: 38 },
+          ];
+
+          // Rad 1–3: Mörkgrå fyllning (#595959) över A1:H3, vit fet rubrik (18 pt) i D2
+          ws1.getRow(1).height = 10;
+          ws1.getRow(2).height = 32;
+          ws1.getRow(3).height = 10;
+
+          for (let r = 1; r <= 3; r++) {
+            for (let c = 1; c <= 8; c++) {
+              ws1.getCell(r, c).fill = headerFill;
+            }
+          }
+
+          const bannerCell = ws1.getCell('D2');
+          bannerCell.value = state.brief.templateTitle || 'Quickchannel körschema på 4F';
+          bannerCell.font = { name: 'Calibri', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+          bannerCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+          // Rad 4: Mörkgrå rubriker A4:D4 och E4:H4
+          ws1.getRow(4).height = 24;
+          ws1.mergeCells('A4:D4');
+          ws1.mergeCells('E4:H4');
+          ws1.getCell('A4').value = 'Namn på sändning (som publicerad)';
+          ws1.getCell('E4').value = 'Datum och sändningstid';
+          for (let c = 1; c <= 8; c++) {
+            const cell = ws1.getCell(4, c);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          }
+
+          // Rad 5: Värden för sändningsnamn och datum/sändningstid
+          ws1.getRow(5).height = 24;
+          ws1.mergeCells('A5:D5');
+          ws1.mergeCells('E5:H5');
+          ws1.getCell('A5').value = state.brief.title || '';
+          ws1.getCell('E5').value = `${swedishDateTimeText} (${plannedDuration.humanText})`;
+          for (let c = 1; c <= 8; c++) {
+            const cell = ws1.getCell(5, c);
+            cell.fill = whiteFill;
+            cell.font = c <= 4 ? boldFont : bodyFont;
+            cell.border = thinBorder;
+            cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          }
+
+          // Rad 6: Mörkgrå rubriker för kontakt och sändningsinställningar
+          ws1.getRow(6).height = 28;
+          ws1.mergeCells('A6:B6');
+          ws1.mergeCells('C6:D6');
+          ws1.mergeCells('G6:H6');
+          ws1.getCell('A6').value = 'Telefonnummer';
+          ws1.getCell('C6').value = 'Ansvarig handläggare';
+          ws1.getCell('E6').value = 'Mailadress';
+          ws1.getCell('F6').value = 'Chattfunktion (Ja/Nej)';
+          ws1.getCell('G6').value = 'Ska inspelning vara tillgänglig? Hur länge?';
+          for (let c = 1; c <= 8; c++) {
+            const cell = ws1.getCell(6, c);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+            cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          }
+
+          // Rad 7: Värden för kontakt och sändningsinställningar
+          ws1.getRow(7).height = 24;
+          ws1.mergeCells('A7:B7');
+          ws1.mergeCells('C7:D7');
+          ws1.mergeCells('G7:H7');
+          ws1.getCell('A7').value = state.brief.phone || '';
+          ws1.getCell('C7').value = state.brief.handler || '';
+          ws1.getCell('E7').value = state.brief.email || '';
+          ws1.getCell('F7').value = state.brief.chatEnabled || 'Ja';
+          ws1.getCell('G7').value = state.brief.recordingAvailable || 'Ja, 30 dagar';
+
+          ws1.getCell('F7').dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: ['"Ja,Nej"'],
+          };
+          ws1.getCell('G7').dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: ['"Ja, 14 dagar,Ja, 30 dagar,Ja, mer än 30 dagar,Nej"'],
+          };
+
+          for (let c = 1; c <= 8; c++) {
+            const cell = ws1.getCell(7, c);
+            cell.fill = whiteFill;
+            cell.font = bodyFont;
+            cell.border = thinBorder;
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'left',
+              wrapText: true,
+            };
+          }
+
+          // Rad 8: Tabellhuvud för körschemat
+          ws1.getRow(8).height = 36;
+          const headers = [
+            'Start',
+            'Slut',
+            'Min',
+            'Programpunkt',
+            'Vem/vilka talar under programpunkten',
+            'Presentationsmaterial för programpunkt (t.ex PPT eller Menti mm.)',
+            'Extra notering',
+            'Tekniska kommentarer och tid för anslutning',
+          ];
+          headers.forEach((hText, idx) => {
+            const cell = ws1.getCell(8, idx + 1);
+            cell.value = hText;
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'left',
+              wrapText: true,
+            };
+          });
+
+          // Schemarader från rad 9
+          let rowCursor = 9;
+          scheduleAnalysis.computedEvents.forEach((ev) => {
+            const row = ws1.getRow(rowCursor);
+            row.height = 26;
+
+            const namesText = ev.speakers.map((s) => s.name).join(', ');
+
+            if (ev.type === 'program') {
+              const sFrac = (((ev.startMin || 0) % 1440) + 1440) % 1440 / 1440;
+              const eFrac = (((ev.endMin || 0) % 1440) + 1440) % 1440 / 1440;
+              const dFrac = ev.durationMin / 1440;
+
+              const c1 = ws1.getCell(rowCursor, 1);
+              c1.value = sFrac;
+              c1.numFmt = 'hh:mm';
+
+              const c2 = ws1.getCell(rowCursor, 2);
+              c2.value = eFrac;
+              c2.numFmt = 'hh:mm';
+
+              const c3 = ws1.getCell(rowCursor, 3);
+              c3.value = { formula: `B${rowCursor}-A${rowCursor}`, result: dFrac };
+              c3.numFmt = '[hh]:mm';
+
+              ws1.getCell(rowCursor, 4).value = ev.title || '';
+              ws1.getCell(rowCursor, 5).value = namesText;
+              ws1.getCell(rowCursor, 6).value = ev.material || '';
+              ws1.getCell(rowCursor, 7).value = ev.autoMicText || '';
+              ws1.getCell(rowCursor, 8).value = ev.extraNote || '';
+
+              for (let c = 1; c <= 8; c++) {
+                const cell = ws1.getCell(rowCursor, c);
+                cell.border = thinBorder;
+                cell.font = c === 4 || c === 7 ? boldFont : bodyFont;
+                cell.alignment = {
+                  vertical: 'middle',
+                  horizontal: 'left',
+                  wrapText: true,
+                };
+                if (c === 7) {
+                  cell.fill = enterFill; // Ljusgrön fyllning #D8E4BC i kolumn G för MIK
+                } else if (c === 8) {
+                  cell.fill = whiteFill;
+                } else {
+                  cell.fill = progFill; // Ljusorange fyllning #FAC090
+                }
+              }
+            } else {
+              const rowFill = ev.action === 'enter' ? enterFill : exitFill;
+              ws1.getCell(rowCursor, 4).value = ev.title || '';
+              ws1.getCell(rowCursor, 5).value = namesText;
+              ws1.getCell(rowCursor, 7).value = ev.autoMicText || '';
+              ws1.getCell(rowCursor, 8).value = ev.extraNote || '';
+
+              for (let c = 1; c <= 8; c++) {
+                const cell = ws1.getCell(rowCursor, c);
+                cell.border = thinBorder;
+                cell.font = c === 4 || c === 7 ? boldFont : bodyFont;
+                cell.fill = rowFill; // Ljusgrön (#D8E4BC) eller ljusröd (#E6B8B7) över hela raden
+                cell.alignment = {
+                  vertical: 'middle',
+                  horizontal: 'left',
+                  wrapText: true,
+                };
+              }
+            }
+
+            rowCursor += 1;
+          });
+
+          // 3 tomma buffert-rader efter schemat med Excel-formel =B{r}-A{r} i kolumn C
+          for (let bIdx = 1; bIdx <= 3; bIdx++) {
+            const bRow = ws1.getRow(rowCursor);
+            bRow.height = 22;
+            const c3 = ws1.getCell(rowCursor, 3);
+            c3.value = { formula: `B${rowCursor}-A${rowCursor}`, result: 0 };
+            c3.numFmt = '[hh]:mm';
+
+            for (let c = 1; c <= 8; c++) {
+              const cell = ws1.getCell(rowCursor, c);
+              cell.fill = whiteFill;
+              cell.font = bodyFont;
+              cell.border = thinBorder;
+              cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            }
+            rowCursor += 1;
+          }
+
+          // Deltagartabell under buffert-raderna
+          rowCursor += 1;
+          ws1.getRow(rowCursor).height = 30;
+          ws1.mergeCells(rowCursor, 1, rowCursor, 2);
+          ws1.mergeCells(rowCursor, 3, rowCursor, 4);
+          ws1.getCell(rowCursor, 1).value = 'På plats eller på distans';
+          ws1.getCell(rowCursor, 3).value = 'Namn (i den ordning de medverkar i programmet!)';
+          ws1.getCell(rowCursor, 5).value = 'Organisation';
+          ws1.getCell(rowCursor, 6).value = 'Mail till distansmedverkande';
+          ws1.getCell(rowCursor, 7).value = 'Mobilnummer till distansmedverkande';
+          ws1.getCell(rowCursor, 8).value = 'Datum och tid för teknikgenomgång';
+
+          for (let c = 1; c <= 8; c++) {
+            const cell = ws1.getCell(rowCursor, c);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+            cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          }
+
+          rowCursor += 1;
+          const listToExport = scheduleAnalysis.orderedParticipants;
+          const totalParticipantRows = Math.max(8, listToExport.length);
+
+          for (let idx = 0; idx < totalParticipantRows; idx++) {
+            const p = listToExport[idx] || null;
+            const row = ws1.getRow(rowCursor);
+            row.height = 24;
+            ws1.mergeCells(rowCursor, 1, rowCursor, 2);
+            ws1.mergeCells(rowCursor, 3, rowCursor, 4);
+
+            if (p) {
+              const modeLabel = p.mode === 'remote' ? 'På distans' : 'På plats';
+              const micTag =
+                p.mode === 'studio' && p.assignedMic ? ` (${p.assignedMic})` : '';
+              ws1.getCell(rowCursor, 1).value = `${modeLabel}${micTag}`;
+              ws1.getCell(rowCursor, 3).value = `${idx + 1}. ${p.name}`;
+              ws1.getCell(rowCursor, 5).value = [p.organization, p.role].filter(Boolean).join(' – ');
+              ws1.getCell(rowCursor, 6).value = p.mode === 'remote' ? p.email || '' : '';
+              ws1.getCell(rowCursor, 7).value = p.mode === 'remote' ? p.mobile || '' : '';
+              ws1.getCell(rowCursor, 8).value = p.mode === 'remote' ? p.techCheck || '' : '';
+            } else {
+              ws1.getCell(rowCursor, 1).value = '';
+              ws1.getCell(rowCursor, 3).value = `${idx + 1}. `;
+              ws1.getCell(rowCursor, 5).value = '';
+              ws1.getCell(rowCursor, 6).value = '';
+              ws1.getCell(rowCursor, 7).value = '';
+              ws1.getCell(rowCursor, 8).value = '';
+            }
+
+            for (let c = 1; c <= 8; c++) {
+              const cell = ws1.getCell(rowCursor, c);
+              cell.fill = whiteFill;
+              cell.font = c === 3 && p ? boldFont : bodyFont;
+              cell.border = thinBorder;
+              cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            }
+            rowCursor += 1;
+          }
+
+          // -------------------------------------------------------------------
+          // FLIK 2: TIPS FÖR DIG SOM PLANERAR
+          // -------------------------------------------------------------------
+          const ws2 = workbook.addWorksheet('Tips för dig som planerar');
+          ws2.columns = [{ width: 32 }, { width: 82 }];
+
+          ws2.getRow(1).height = 30;
+          ws2.mergeCells('A1:B1');
+          const ws2Title = ws2.getCell('A1');
+          ws2Title.value = 'Tips för dig som planerar en live-webbsändning';
+          ws2Title.fill = headerFill;
+          ws2Title.font = { name: 'Calibri', size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
+          ws2Title.alignment = { vertical: 'middle', horizontal: 'left' };
+
+          ws2.getRow(3).height = 25;
+          ws2.getCell('A3').value = 'Nr / Område';
+          ws2.getCell('B3').value = 'Planeringstips för live-webbsändning';
+          ['A3', 'B3'].forEach((ref) => {
+            const cell = ws2.getCell(ref);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+          });
+
+          const planningTips = [
+            ['1. Tydligt syfte och målgrupp', 'Definiera vad tittarna ska ta med sig efter sändningen och anpassa språk, nivå och exempel efter målgruppen.'],
+            ['2. Håll tempot och variera formatet', 'Växla mellan korta presentationer, samtal och konkreta exempel. Undvik långa monologer utan paus eller byte.'],
+            ['3. Tydlig roll för moderatorn', 'Moderatorn leder tittarna genom programmet, introducerar medverkande, håller tiden och fångar upp frågor.'],
+            ['4. Planera in- och utgångar i studion', 'Lägg in tydliga rader för när personer går på och av så att ljud- och bildproducent kan förbereda byten smidigt.'],
+            ['5. Presentationsmaterial i god tid', 'Samla PowerPoint-bilder och eventuella Menti-moment i en gemensam presentation i 16:9-format med stor, tydlig text.'],
+            ['6. Teknikgenomgång för distansgäster', 'Boka alltid en kort teknikgenomgång med medverkande på distans för att testa ljud, kamera, ljus och uppkoppling.'],
+            ['7. Lägg in luft i körschemat', 'Planera med marginaler så att sändningen hinner rundas av i tid utan stress i slutet.'],
+          ];
+
+          planningTips.forEach(([area, tip], idx) => {
+            const r = 4 + idx;
+            ws2.getRow(r).height = 36;
+            const cA = ws2.getCell(r, 1);
+            const cB = ws2.getCell(r, 2);
+            cA.value = area;
+            cB.value = tip;
+            cA.fill = progFill;
+            cB.fill = whiteFill;
+            cA.font = boldFont;
+            cB.font = bodyFont;
+            cA.border = thinBorder;
+            cB.border = thinBorder;
+            cA.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            cB.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          });
+
+          // Tabellen "Förslag till upplägg"
+          const layoutStartRow = 12;
+          ws2.getRow(layoutStartRow).height = 28;
+          ws2.mergeCells(`A${layoutStartRow}:B${layoutStartRow}`);
+          const layoutHeader = ws2.getCell(`A${layoutStartRow}`);
+          layoutHeader.value = 'Förslag till upplägg';
+          layoutHeader.fill = headerFill;
+          layoutHeader.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+          layoutHeader.alignment = { vertical: 'middle', horizontal: 'left' };
+
+          const subHeaderRow = layoutStartRow + 1;
+          ws2.getRow(subHeaderRow).height = 24;
+          ws2.getCell(subHeaderRow, 1).value = 'Tidsåtgång';
+          ws2.getCell(subHeaderRow, 2).value = 'Moment i sändningen';
+          [1, 2].forEach((colIdx) => {
+            const cell = ws2.getCell(subHeaderRow, colIdx);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          });
+
+          const suggestedStructure = [
+            ['3 min', 'Inledning: Välkomna, syfte och presentation av dagens program'],
+            ['15 min', 'Aktuellt: Omvärldsbevakning, nyheter eller huvudpresentation'],
+            ['10 min', 'Samtal / reflektion i studio kring huvudbudskapen'],
+            ['> 20 min', 'Fördjupning: Goda exempel och erfarenheter från verksamheten'],
+            ['3 min', 'Kort sammanfattning och byte av medverkande'],
+            ['10 min', 'Frågestund: Svar på tittarnas frågor från chatt eller Menti'],
+            ['3 min', 'Avslutning: Summering, kontaktvägar och tack för idag'],
+            ['ca 60 min', 'Totalt'],
+          ];
+
+          suggestedStructure.forEach(([timeStr, descStr], idx) => {
+            const r = subHeaderRow + 1 + idx;
+            const isTotal = descStr === 'Totalt';
+            ws2.getRow(r).height = 26;
+            const cA = ws2.getCell(r, 1);
+            const cB = ws2.getCell(r, 2);
+            cA.value = timeStr;
+            cB.value = descStr;
+            cA.fill = isTotal ? enterFill : whiteFill;
+            cB.fill = isTotal ? enterFill : whiteFill;
+            cA.font = boldFont;
+            cB.font = isTotal ? boldFont : bodyFont;
+            cA.border = thinBorder;
+            cB.border = thinBorder;
+            cA.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            cB.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          });
+
+          // -------------------------------------------------------------------
+          // FLIK 3: FÖR DINA MEDVERKANDE
+          // -------------------------------------------------------------------
+          const ws3 = workbook.addWorksheet('För dina medverkande');
+          ws3.columns = [{ width: 32 }, { width: 82 }];
+
+          ws3.getRow(1).height = 30;
+          ws3.mergeCells('A1:B1');
+          const ws3Title = ws3.getCell('A1');
+          ws3Title.value = 'Tips för dina medverkande på länk';
+          ws3Title.fill = headerFill;
+          ws3Title.font = { name: 'Calibri', size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
+          ws3Title.alignment = { vertical: 'middle', horizontal: 'left' };
+
+          ws3.getRow(3).height = 25;
+          ws3.getCell('A3').value = 'Område';
+          ws3.getCell('B3').value = 'Råd inför din medverkan';
+          ['A3', 'B3'].forEach((ref) => {
+            const cell = ws3.getCell(ref);
+            cell.fill = headerFill;
+            cell.font = headerFont;
+            cell.border = thinBorder;
+          });
+
+          const participantTips = [
+            ['Bakgrund och ljus', 'Välj en lugn och städad bakgrund. Se till att du har ljuset framifrån (t.ex. från ett fönster eller en lampa framför dig) och undvik starkt motljus bakom ryggen.'],
+            ['Avstånd', 'Sitt på lagom armlängds avstånd från datorn så att huvud och axlar syns tydligt i bild utan att du hamnar för nära eller för långt bort.'],
+            ['Placering av kamera', 'Placera webbkameran i ögonhöjd, exempelvis genom att palla upp datorn på några böcker, och titta in i kameran när du talar.'],
+            ['Ljud', 'Sitt i ett tyst rum utan eko eller bakgrundsljud. Använd gärna trådbundet headset eller extern mikrofon och stäng av aviseringar på dator och mobil.'],
+            ['Kläder', 'Välj enfärgade kläder i lugna toner och undvik smårutiga, smårandiga eller starkt flimrande mönster som kan skapa oro i kamerabilden.'],
+          ];
+
+          participantTips.forEach(([topic, text], idx) => {
+            const r = 4 + idx;
+            ws3.getRow(r).height = 42;
+            const cA = ws3.getCell(r, 1);
+            const cB = ws3.getCell(r, 2);
+            cA.value = topic;
+            cB.value = text;
+            cA.fill = enterFill;
+            cB.fill = whiteFill;
+            cA.font = boldFont;
+            cB.font = bodyFont;
+            cA.border = thinBorder;
+            cB.border = thinBorder;
+            cA.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            cB.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          });
+
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          });
+          const url = URL.createObjectURL(blob);
+
+          const cleanTitle = (state.brief.title || 'Korschema')
+            .trim()
+            .replace(/[\\/:*?"<>|]+/g, '')
+            .replace(/\s+/g, '_');
+          const fileName = `${cleanTitle}_${state.brief.date || 'schema'}.xlsx`;
+
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          triggerToast(`Exporterade ${fileName} med 3 flikar.`);
+        } catch (err) {
+          console.error('Excel-export misslyckades:', err);
+          exportFallbackCsv();
+        } finally {
+          setExportingXlsx(false);
+        }
+      }
+
+      // =====================================================================
+      // STEG 1: SÄNDNINGSBRIEF
+      // =====================================================================
+      function renderStep1Brief() {
+        const b = state.brief;
+        return (
+          <section aria-labelledby="step1-heading">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+              <div className="pb-4 mb-5 border-b border-slate-200">
+                <h2 id="step1-heading" className="text-xl font-bold text-slate-900">
+                  1. Sändningsbrief
+                </h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Fyll i grunduppgifter för sändningen. Total sändningslängd beräknas automatiskt till sammanställningen och Excel-filen utifrån datum, starttid och sluttid.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label htmlFor="brief-template-title" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Mallrubrik / studio
+                  </label>
+                  <input
+                    id="brief-template-title"
+                    type="text"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.templateTitle}
+                    onChange={(e) => updateBriefField('templateTitle', e.target.value)}
+                    placeholder="Quickchannel körschema på 4F"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="brief-title" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Namn på sändning (som publicerad)
+                  </label>
+                  <input
+                    id="brief-title"
+                    type="text"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.title}
+                    onChange={(e) => updateBriefField('title', e.target.value)}
+                    placeholder="T.ex. Aktuellt i socialtjänsten"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label htmlFor="brief-date" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Datum
+                  </label>
+                  <input
+                    id="brief-date"
+                    type="date"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.date}
+                    onChange={(e) => updateBriefField('date', e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="brief-start" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Starttid
+                  </label>
+                  <input
+                    id="brief-start"
+                    type="time"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.startTime}
+                    onChange={(e) => updateBriefField('startTime', e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="brief-end" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Sluttid
+                  </label>
+                  <input
+                    id="brief-end"
+                    type="time"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.endTime}
+                    onChange={(e) => updateBriefField('endTime', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div>
+                  <label htmlFor="brief-handler" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Ansvarig handläggare
+                  </label>
+                  <input
+                    id="brief-handler"
+                    type="text"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.handler}
+                    onChange={(e) => updateBriefField('handler', e.target.value)}
+                    placeholder="Namn på ansvarig handläggare"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="brief-phone" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Telefonnummer
+                  </label>
+                  <input
+                    id="brief-phone"
+                    type="tel"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.phone}
+                    onChange={(e) => updateBriefField('phone', e.target.value)}
+                    placeholder="T.ex. 08-452 70 00"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="brief-email" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Mailadress
+                  </label>
+                  <input
+                    id="brief-email"
+                    type="email"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                    value={b.email}
+                    onChange={(e) => updateBriefField('email', e.target.value)}
+                    placeholder="namn@organisation.se"
+                  />
+                </div>
+              </div>
+
+              {/* Hopfällbar sektion */}
+              <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
+                <button
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  onClick={() => setAdvancedOpen((prev) => !prev)}
+                  className="w-full px-4 py-3 flex items-center justify-between text-left text-sm font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
+                >
+                  <span>Fler sändnings- och teknikval (valfritt)</span>
+                  <span className="text-indigo-600 text-xs font-semibold">
+                    {advancedOpen ? 'Dölj ▲' : 'Visa ▼'}
+                  </span>
+                </button>
+
+                {advancedOpen && (
+                  <div className="p-4 border-t border-slate-200 bg-white space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="brief-chat" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                          Chattfunktion (Ja/Nej)
+                        </label>
+                        <select
+                          id="brief-chat"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                          value={b.chatEnabled}
+                          onChange={(e) => updateBriefField('chatEnabled', e.target.value)}
+                        >
+                          <option value="Ja">Ja</option>
+                          <option value="Nej">Nej</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="brief-recording" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                          Ska inspelning vara tillgänglig? Hur länge?
+                        </label>
+                        <select
+                          id="brief-recording"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                          value={b.recordingAvailable}
+                          onChange={(e) => updateBriefField('recordingAvailable', e.target.value)}
+                        >
+                          {RECORDING_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="brief-desc" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                        Beskrivning och syfte
+                      </label>
+                      <textarea
+                        id="brief-desc"
+                        rows={3}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                        value={b.description}
+                        onChange={(e) => updateBriefField('description', e.target.value)}
+                        placeholder="Beskriv sändningens innehåll, målgrupp och särskilda önskemål..."
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        );
+      }
+
+      // =====================================================================
+      // STEG 2: DELTAGARLISTA
+      // =====================================================================
+      function renderStep2Participants() {
+        const remoteCount = state.participants.filter((p) => p.mode === 'remote').length;
+        const studioCount = state.participants.length - remoteCount;
+
+        return (
+          <section aria-labelledby="step2-heading">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 pb-4 mb-5 border-b border-slate-200">
+                <div>
+                  <h2 id="step2-heading" className="text-xl font-bold text-slate-900">
+                    2. Deltagarlista
+                  </h2>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Registrera alla medverkande som deltar på plats eller på distans. Mikrofonkanaler tilldelas automatiskt utifrån körschemat.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200 tabular-nums">
+                    Totalt: {state.participants.length}
+                  </span>
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 tabular-nums">
+                    På plats: {studioCount}
+                  </span>
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200 tabular-nums">
+                    På distans: {remoteCount}
+                  </span>
+                </div>
+              </div>
+
+              {/* Formulär för att lägga till / redigera deltagare */}
+              <form onSubmit={handleSaveParticipant} className="mb-6 pb-6 border-b border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label htmlFor="part-name" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                      Namn
+                    </label>
+                    <input
+                      id="part-name"
+                      type="text"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                      value={partName}
+                      onChange={(e) => setPartName(e.target.value)}
+                      placeholder="Förnamn Efternamn"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="part-org" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                      Organisation
+                    </label>
+                    <input
+                      id="part-org"
+                      type="text"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                      value={partOrg}
+                      onChange={(e) => setPartOrg(e.target.value)}
+                      placeholder="Kommun, region eller myndighet"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="part-role" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                      Roll / titel (valfritt)
+                    </label>
+                    <input
+                      id="part-role"
+                      type="text"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                      value={partRole}
+                      onChange={(e) => setPartRole(e.target.value)}
+                      placeholder="T.ex. Utredare, Moderator"
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <span className="block text-sm font-semibold text-slate-800 mb-2">
+                    Medverkandeform
+                  </span>
+                  <div className="flex flex-wrap gap-2.5">
+                    <label
+                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold cursor-pointer transition-colors ${
+                        partMode === 'studio'
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="partMode"
+                        value="studio"
+                        checked={partMode === 'studio'}
+                        onChange={() => setPartMode('studio')}
+                        className="sr-only"
+                      />
+                      <span>På plats</span>
+                    </label>
+
+                    <label
+                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold cursor-pointer transition-colors ${
+                        partMode === 'remote'
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="partMode"
+                        value="remote"
+                        checked={partMode === 'remote'}
+                        onChange={() => setPartMode('remote')}
+                        className="sr-only"
+                      />
+                      <span>På distans</span>
+                    </label>
+                  </div>
+                </div>
+
+                {partMode === 'remote' && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 mb-4 rounded-xl bg-blue-50/70 border border-blue-200">
+                    <div>
+                      <label htmlFor="part-email" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                        E-postadress
+                      </label>
+                      <input
+                        id="part-email"
+                        type="email"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                        value={partEmail}
+                        onChange={(e) => setPartEmail(e.target.value)}
+                        placeholder="namn@organisation.se"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="part-mobile" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                        Mobilnummer
+                      </label>
+                      <input
+                        id="part-mobile"
+                        type="tel"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                        value={partMobile}
+                        onChange={(e) => setPartMobile(e.target.value)}
+                        placeholder="070-123 45 67"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="part-tech-check" className="block text-sm font-semibold text-slate-800 mb-1.5">
+                        Datum och tid för teknikgenomgång
+                      </label>
+                      <input
+                        id="part-tech-check"
+                        type="text"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-600"
+                        value={partTechCheck}
+                        onChange={(e) => setPartTechCheck(e.target.value)}
+                        placeholder="T.ex. 2026-11-24 kl. 15:15"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {partError && (
+                  <p className="text-sm font-semibold text-rose-600 mb-3">{partError}</p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
+                  >
+                    {editingParticipantId ? 'Spara ändringar' : '+ Lägg till deltagare'}
+                  </button>
+                  {editingParticipantId && (
+                    <button
+                      type="button"
+                      onClick={resetParticipantForm}
+                      className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                    >
+                      Avbryt redigering
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {/* Lista över registrerade deltagare */}
+              <div>
+                <h3 className="text-base font-bold text-slate-900 mb-3">
+                  Registrerade medverkande ({state.participants.length})
+                </h3>
+
+                {state.participants.length === 0 ? (
+                  <div className="p-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-600">
+                    Inga deltagare tillagda ännu. Fyll i formuläret ovan för att lägga till medverkande.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {state.participants.map((person) => (
+                      <div
+                        key={person.id}
+                        className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white transition-colors"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-slate-900 text-sm sm:text-base">
+                              {person.name}
+                            </span>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                person.mode === 'remote'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {person.mode === 'remote' ? 'På distans' : 'På plats'}
+                            </span>
+                          </div>
+                          <div className="text-xs sm:text-sm text-slate-600 mt-0.5">
+                            {[person.organization, person.role].filter(Boolean).join(' · ') ||
+                              'Ingen organisation angiven'}
+                          </div>
+                          {person.mode === 'remote' && (
+                            <div className="text-xs text-blue-700 font-medium mt-1">
+                              {[
+                                person.email,
+                                person.mobile,
+                                person.techCheck ? `Teknikgenomgång: ${person.techCheck}` : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditParticipant(person)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                          >
+                            Redigera
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteParticipant(person.id)}
+                            aria-label={`Ta bort ${person.name}`}
+                            className="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors"
+                          >
+                            Ta bort
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        );
+      }
+
+      // =====================================================================
+      // STEG 3: KÖRSCHEMA
+      // =====================================================================
+      function renderStep3Schedule() {
+        const fallbackTimes = getDefaultScheduleDefaults();
+        const displayStart = state.brief.startTime || fallbackTimes.startTime;
+        const displayEnd = state.brief.endTime || fallbackTimes.endTime;
+
+        const diffFromPlanned =
+          scheduleAnalysis.scheduledEndMinutes - plannedDuration.endMinutesAbsolute;
+
+        let comparisonText = `Matchar planerad sluttid (${displayEnd})`;
+        let comparisonClass = 'text-emerald-700';
+        if (diffFromPlanned < 0) {
+          comparisonText = `${Math.abs(diffFromPlanned)} min kvar till planerad sluttid (${displayEnd})`;
+          comparisonClass = 'text-indigo-600';
+        } else if (diffFromPlanned > 0) {
+          comparisonText = `Överskrider planerad sluttid (${displayEnd}) med ${diffFromPlanned} min`;
+          comparisonClass = 'text-rose-600';
+        }
+
+        return (
+          <section aria-labelledby="step3-heading">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+              <div className="pb-4 mb-5 border-b border-slate-200">
+                <h2 id="step3-heading" className="text-xl font-bold text-slate-900">
+                  3. Körschema
+                </h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Pussla ihop sändningens programpunkter samt när deltagare går på och går av. Dra korten i handtaget eller använd pilarna för att ändra ordning.
+                </p>
+              </div>
+
+              {/* Tidsöversikt */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5 tabular-nums">
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Starttid</div>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">
+                    {displayStart}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-0.5">
+                    Planerat slut: {displayEnd}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Beräknad sluttid</div>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">
+                    {scheduleAnalysis.scheduledEndFormatted}
+                  </div>
+                  <div className={`text-xs font-semibold mt-0.5 ${comparisonClass}`}>
+                    {comparisonText}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Schemalagd programtid</div>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">
+                    {scheduleAnalysis.totalProgramMinutes} min
+                  </div>
+                  <div className="text-xs text-slate-600 mt-0.5">
+                    Antal händelser: {scheduleAnalysis.computedEvents.length} st
+                  </div>
+                </div>
+              </div>
+
+              {/* Snabbknappar för att lägga till händelser */}
+              <div className="flex flex-wrap items-center gap-2.5 p-3.5 mb-5 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-sm font-semibold text-slate-700 mr-1">
+                  Lägg till händelse:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAddEvent('program')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 text-white text-xs sm:text-sm font-semibold hover:bg-amber-600 transition-colors"
+                >
+                  + Programpunkt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAddEvent('enter')}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 transition-colors"
+                >
+                  + Person går på
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickAddEvent('exit')}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-semibold hover:bg-rose-700 transition-colors"
+                >
+                  + Person går av
+                </button>
+              </div>
+
+              {/* Tidslinjekort */}
+              {scheduleAnalysis.computedEvents.length === 0 ? (
+                <div className="p-8 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-600">
+                  Körschemat är tomt. Klicka på <strong>+ Programpunkt</strong>, <strong>+ Person går på</strong> eller <strong>+ Person går av</strong> ovan.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {scheduleAnalysis.computedEvents.map((ev, idx) => {
+                    const isProgram = ev.type === 'program';
+                    const isEnter = !isProgram && ev.action === 'enter';
+                    const isExpanded = expandedEventId === ev.id;
+
+                    const cardStyle = isProgram
+                      ? 'bg-amber-50/75 border-amber-200 border-l-4 border-l-amber-500'
+                      : isEnter
+                        ? 'bg-emerald-50/75 border-emerald-200 border-l-4 border-l-emerald-500'
+                        : 'bg-rose-50/75 border-rose-200 border-l-4 border-l-rose-500';
+
+                    const badgeStyle = isProgram
+                      ? 'bg-amber-100 text-amber-800'
+                      : isEnter
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-rose-100 text-rose-800';
+
+                    const badgeLabel = isProgram
+                      ? 'Programpunkt'
+                      : isEnter
+                        ? 'Person går på'
+                        : 'Person går av';
+
+                    return (
+                      <div
+                        key={ev.id}
+                        draggable
+                        onDragStart={() => setDraggedIndex(idx)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (dragOverIndex !== idx) setDragOverIndex(idx);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverIndex === idx) setDragOverIndex(null);
+                        }}
+                        onDrop={() => handleDropOnEvent(idx)}
+                        onDragEnd={() => {
+                          setDraggedIndex(null);
+                          setDragOverIndex(null);
+                        }}
+                        className={`rounded-xl border p-4 transition-all ${cardStyle} ${
+                          draggedIndex === idx ? 'opacity-50' : ''
+                        } ${
+                          dragOverIndex === idx && draggedIndex !== idx
+                            ? 'ring-2 ring-indigo-500'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className="cursor-grab active:cursor-grabbing px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-600 text-xs font-bold select-none"
+                              title="Dra för att flytta händelsen"
+                              aria-label="Dra för att flytta händelsen"
+                            >
+                              ⋮⋮
+                            </span>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeStyle}`}
+                            >
+                              {badgeLabel}
+                            </span>
+                            {isProgram && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white border border-amber-200 text-slate-800 tabular-nums">
+                                {ev.startFormatted} – {ev.endFormatted} ({ev.durationMin} min)
+                              </span>
+                            )}
+                            <span className="font-bold text-slate-900 text-sm sm:text-base">
+                              {ev.title || 'Namnlös händelse'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedEventId((prev) => (prev === ev.id ? null : ev.id))
+                              }
+                              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                            >
+                              {isExpanded ? 'Klar' : 'Redigera'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => moveEventByOffset(idx, -1)}
+                              title="Flytta upp"
+                              aria-label="Flytta upp"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-40"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === scheduleAnalysis.computedEvents.length - 1}
+                              onClick={() => moveEventByOffset(idx, 1)}
+                              title="Flytta ner"
+                              aria-label="Flytta ner"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-40"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteEvent(ev.id)}
+                              aria-label={`Ta bort ${ev.title}`}
+                              className="px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-100/80 text-xs font-semibold transition-colors"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sammanfattningsrad när kortet är stängt */}
+                        {!isExpanded && (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-slate-700">
+                            <span>
+                              <strong className="font-semibold text-slate-900">
+                                {isProgram ? 'Medverkande:' : 'Gäller:'}
+                              </strong>{' '}
+                              {ev.speakers.length > 0
+                                ? ev.speakers
+                                    .map((s) => `${s.name}${s.mode === 'remote' ? ' (på distans)' : ''}`)
+                                    .join(', ')
+                                : 'Ingen vald'}
+                            </span>
+                            {isProgram && ev.material && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                Material: {ev.material}
+                              </span>
+                            )}
+                            {ev.extraNote && (
+                              <span className="text-slate-600">· {ev.extraNote}</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Inline-redigering när kortet är expanderat */}
+                        {isExpanded && (
+                          <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-3">
+                            <div
+                              className={`grid grid-cols-1 ${
+                                isProgram ? 'md:grid-cols-3' : 'md:grid-cols-2'
+                              } gap-3`}
+                            >
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-800 mb-1">
+                                  Rubrik
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  value={ev.title}
+                                  onChange={(e) =>
+                                    handleUpdateEvent(ev.id, { title: e.target.value })
+                                  }
+                                />
+                              </div>
+
+                              {isProgram ? (
+                                <>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-slate-800 mb-1">
+                                      Längd (minuter)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="360"
+                                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      value={ev.durationMinutes}
+                                      onChange={(e) =>
+                                        handleUpdateEvent(ev.id, {
+                                          durationMinutes: Math.max(0, Number(e.target.value) || 0),
+                                        })
+                                      }
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-xs font-semibold text-slate-800 mb-1">
+                                      Presentationsmaterial (t.ex. Master PPT eller Menti)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      value={ev.material || ''}
+                                      onChange={(e) =>
+                                        handleUpdateEvent(ev.id, { material: e.target.value })
+                                      }
+                                      placeholder="T.ex. Master PPT"
+                                    />
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {PRESENTATION_PRESETS.map((preset) => (
+                                        <button
+                                          key={preset}
+                                          type="button"
+                                          onClick={() =>
+                                            handleUpdateEvent(ev.id, { material: preset })
+                                          }
+                                          className={`px-2 py-0.5 rounded-lg text-xs font-medium border transition-colors ${
+                                            ev.material === preset
+                                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                                              : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {preset}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-800 mb-1">
+                                    Typ av händelse
+                                  </label>
+                                  <select
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={ev.action || 'enter'}
+                                    onChange={(e) => {
+                                      const nextAct = e.target.value;
+                                      const names = ev.speakers.map((s) => s.name.split(' ')[0]);
+                                      const prefix =
+                                        names.length > 0 ? names.join(' + ') : 'Deltagare';
+                                      const suggested =
+                                        nextAct === 'enter' ? `${prefix} på` : `${prefix} av`;
+                                      handleUpdateEvent(ev.id, {
+                                        action: nextAct,
+                                        title: suggested,
+                                      });
+                                    }}
+                                  >
+                                    <option value="enter">Person går på</option>
+                                    <option value="exit">Person går av</option>
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="block text-xs font-semibold text-slate-800 mb-1.5">
+                                {isProgram ? 'Vem/vilka talar under programpunkten' : 'Välj deltagare'}
+                              </span>
+                              {state.participants.length === 0 ? (
+                                <p className="text-xs text-slate-600">
+                                  Lägg till deltagare i steg 2 för att koppla dem hit.
+                                </p>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {state.participants.map((p) => {
+                                    const selected = (ev.speakerIds || []).includes(p.id);
+                                    return (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => handleToggleEventSpeaker(ev.id, p.id)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                                          selected
+                                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {p.name}
+                                        {p.mode === 'remote' ? ' (på distans)' : ''}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-800 mb-1">
+                                Tekniska kommentarer och tid för anslutning
+                              </label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                value={ev.extraNote || ''}
+                                onChange={(e) =>
+                                  handleUpdateEvent(ev.id, { extraNote: e.target.value })
+                                }
+                                placeholder="T.ex. Ansluter på distans 15 min före eller särskild anvisning"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      }
+
+      // =====================================================================
+      // STEG 4: GRANSKA & EXPORTERA
+      // =====================================================================
+      function renderStep4ReviewAndExport() {
+        const b = state.brief;
+        const remoteCount = state.participants.filter((p) => p.mode === 'remote').length;
+        const studioCount = state.participants.length - remoteCount;
+        const previewParticipantRows = Math.max(8, scheduleAnalysis.orderedParticipants.length);
+
+        return (
+          <section aria-labelledby="step4-heading">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+              {/* Topprad med rubrik, exportknapp och kompakt 4-kolumns nyckelöversikt */}
+              <div className="pb-5 mb-5 border-b border-slate-200">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                  <div>
+                    <h2 id="step4-heading" className="text-xl font-bold text-slate-900">
+                      4. Granska &amp; Exportera
+                    </h2>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Kontrollera nyckeluppgifterna och ladda ner det färdiga Excel-körschemat.
+                    </p>
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      disabled={exportingXlsx}
+                      onClick={handleExportExcel}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-xs"
+                    >
+                      {exportingXlsx ? 'Genererar .xlsx...' : 'Ladda ner Excel (.xlsx)'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kompakt 4-kolumns nyckelinfo-rad med direkta Ändra-länkar */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-semibold text-slate-500">Sändning &amp; tid</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveStep(1)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        Ändra
+                      </button>
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 truncate" title={b.title || ''}>
+                      {b.title || 'Namnlös sändning'}
+                    </div>
+                    <div className="text-xs text-slate-600 tabular-nums mt-0.5">
+                      {swedishDateTimeText} · {plannedDuration.humanText}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-semibold text-slate-500">Ansvarig</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveStep(1)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        Ändra
+                      </button>
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 truncate" title={b.handler || ''}>
+                      {b.handler || 'Ej angiven'}
+                    </div>
+                    <div
+                      className="text-xs text-slate-600 truncate mt-0.5"
+                      title={[b.phone, b.email].filter(Boolean).join(' · ')}
+                    >
+                      {[b.phone, b.email].filter(Boolean).join(' · ') || 'Inga kontaktuppgifter'}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-semibold text-slate-500">Medverkande</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveStep(2)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        Ändra
+                      </button>
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 tabular-nums">
+                      {state.participants.length} st totalt
+                    </div>
+                    <div className="text-xs text-slate-600 tabular-nums mt-0.5">
+                      {studioCount} på plats · {remoteCount} på distans
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-semibold text-slate-500">Körschema</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveStep(3)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        Ändra
+                      </button>
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 tabular-nums">
+                      {scheduleAnalysis.programCount} programpunkter
+                    </div>
+                    <div className="text-xs text-slate-600 tabular-nums mt-0.5">
+                      {scheduleAnalysis.computedEvents.length} rader · Slut {scheduleAnalysis.scheduledEndFormatted}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diskret textrad för sändningsbeskrivning om sådan fyllts i */}
+                {b.description && b.description.trim() && (
+                  <div className="mt-3 px-3.5 py-2 rounded-xl bg-slate-50/70 border border-slate-200/80 text-xs text-slate-600 flex items-start gap-2">
+                    <span className="font-semibold text-slate-800 shrink-0">Beskrivning:</span>
+                    <span>{b.description}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Fullständig visuell Excel-förhandsvisning */}
+              <div>
+                <h3 className="text-base font-bold text-slate-900 mb-1">
+                  Visuell Excel-förhandsvisning (Flik 1: Körschema)
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 mb-3">
+                  Vid export skapas en .xlsx-fil med tre flikar: Körschema, Tips för dig som planerar och För dina medverkande.
+                </p>
+
+                <div className="overflow-x-auto border border-slate-300 rounded-xl bg-white">
+                  <table className="excel-sheet-table tabular-nums">
+                    <thead>
+                      <tr>
+                        <th colSpan={3} className="excel-banner"></th>
+                        <th colSpan={5} className="excel-banner" style={{ fontSize: '18px' }}>
+                          {b.templateTitle || 'Quickchannel körschema på 4F'}
+                        </th>
+                      </tr>
+                      <tr>
+                        <th colSpan={4} className="excel-th">
+                          Namn på sändning (som publicerad)
+                        </th>
+                        <th colSpan={4} className="excel-th">
+                          Datum och sändningstid
+                        </th>
+                      </tr>
+                      <tr>
+                        <td colSpan={4} style={{ fontWeight: 700 }}>
+                          {b.title || '–'}
+                        </td>
+                        <td colSpan={4}>
+                          {swedishDateTimeText} ({plannedDuration.humanText})
+                        </td>
+                      </tr>
+                      <tr>
+                        <th colSpan={2} className="excel-th">Telefonnummer</th>
+                        <th colSpan={2} className="excel-th">Ansvarig handläggare</th>
+                        <th className="excel-th">Mailadress</th>
+                        <th className="excel-th">Chattfunktion (Ja/Nej)</th>
+                        <th colSpan={2} className="excel-th">Ska inspelning vara tillgänglig? Hur länge?</th>
+                      </tr>
+                      <tr>
+                        <td colSpan={2}>{b.phone || '–'}</td>
+                        <td colSpan={2}>{b.handler || '–'}</td>
+                        <td>{b.email || '–'}</td>
+                        <td>{b.chatEnabled}</td>
+                        <td colSpan={2}>{b.recordingAvailable}</td>
+                      </tr>
+                      <tr>
+                        <th className="excel-th" style={{ width: '64px' }}>Start</th>
+                        <th className="excel-th" style={{ width: '64px' }}>Slut</th>
+                        <th className="excel-th" style={{ width: '58px' }}>Min</th>
+                        <th className="excel-th">Programpunkt</th>
+                        <th className="excel-th">Vem/vilka talar under programpunkten</th>
+                        <th className="excel-th">Presentationsmaterial för programpunkt (t.ex PPT eller Menti mm.)</th>
+                        <th className="excel-th">Extra notering</th>
+                        <th className="excel-th">Tekniska kommentarer och tid för anslutning</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduleAnalysis.computedEvents.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} style={{ padding: '14px' }}>
+                            Inga händelser inlagda i körschemat.
+                          </td>
+                        </tr>
+                      ) : (
+                        scheduleAnalysis.computedEvents.map((ev) => {
+                          const isProgram = ev.type === 'program';
+                          const rowClass = isProgram
+                            ? 'excel-prog'
+                            : ev.action === 'enter'
+                              ? 'excel-enter'
+                              : 'excel-exit';
+
+                          return (
+                            <tr key={ev.id}>
+                              <td className={rowClass}>{isProgram ? ev.startFormatted : ''}</td>
+                              <td className={rowClass}>{isProgram ? ev.endFormatted : ''}</td>
+                              <td className={rowClass}>{isProgram ? ev.durationMin : ''}</td>
+                              <td className={rowClass} style={{ fontWeight: 700 }}>
+                                {ev.title}
+                              </td>
+                              <td className={rowClass}>
+                                {ev.speakers.map((s) => s.name).join(', ')}
+                              </td>
+                              <td className={rowClass}>{isProgram ? ev.material || '' : ''}</td>
+                              <td className={isProgram ? 'excel-mic-cell' : rowClass}>
+                                {ev.autoMicText}
+                              </td>
+                              <td className={isProgram ? '' : rowClass}>{ev.extraNote || ''}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+
+                      {/* 3 tomma buffert-rader */}
+                      {[1, 2, 3].map((bufNum) => (
+                        <tr key={`buf-${bufNum}`}>
+                          <td className="excel-buffer-cell" style={{ height: '28px' }}></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                          <td className="excel-buffer-cell"></td>
+                        </tr>
+                      ))}
+
+                      {/* Deltagartabell i programordning längst ner */}
+                      <tr>
+                        <th colSpan={2} className="excel-th">På plats eller på distans</th>
+                        <th colSpan={2} className="excel-th">Namn (i den ordning de medverkar i programmet!)</th>
+                        <th className="excel-th">Organisation</th>
+                        <th className="excel-th">Mail till distansmedverkande</th>
+                        <th className="excel-th">Mobilnummer till distansmedverkande</th>
+                        <th className="excel-th">Datum och tid för teknikgenomgång</th>
+                      </tr>
+                      {Array.from({ length: previewParticipantRows }).map((_, idx) => {
+                        const p = scheduleAnalysis.orderedParticipants[idx] || null;
+                        return (
+                          <tr key={`xls-p-${idx}`}>
+                            <td colSpan={2}>
+                              {p
+                                ? `${p.mode === 'remote' ? 'På distans' : 'På plats'}${
+                                    p.mode === 'studio' && p.assignedMic ? ` (${p.assignedMic})` : ''
+                                  }`
+                                : ''}
+                            </td>
+                            <td colSpan={2} style={{ fontWeight: p ? 700 : 400 }}>
+                              {p ? `${idx + 1}. ${p.name}` : `${idx + 1}. `}
+                            </td>
+                            <td>{p ? [p.organization, p.role].filter(Boolean).join(' – ') : ''}</td>
+                            <td>{p && p.mode === 'remote' ? p.email || '' : ''}</td>
+                            <td>{p && p.mode === 'remote' ? p.mobile || '' : ''}</td>
+                            <td>{p && p.mode === 'remote' ? p.techCheck || '' : ''}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      }
+
+      return (
+        <AppErrorBoundary>
+          {/* Toppheader med tydliga stegflikar och enbart "Börja ny (rensa)" */}
+          <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                    K
+                  </div>
+                  <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                      Körschema Studio
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-600">
+                      Planering av sändning, deltagare och körschema
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50 hover:text-rose-600 hover:border-rose-300 transition-colors"
+                >
+                  Börja ny (rensa)
+                </button>
+              </div>
+
+              {/* 4 klickbara stegflikar med rena stegnummer */}
+              <nav
+                aria-label="Steg i Körschema Studio"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2"
+              >
+                {STEPS.map((st) => {
+                  const isActive = activeStep === st.id;
+                  let countBadge = null;
+                  if (st.id === 2) {
+                    countBadge = `${state.participants.length} st`;
+                  } else if (st.id === 3) {
+                    countBadge = `${state.events.length} st`;
+                  }
+
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      aria-current={isActive ? 'step' : undefined}
+                      onClick={() => setActiveStep(st.id)}
+                      className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-t-xl border border-b-2 text-left text-sm font-semibold transition-colors ${
+                        isActive
+                          ? 'bg-slate-50 text-indigo-700 border-slate-200 border-b-indigo-600'
+                          : 'bg-white text-slate-600 border-transparent hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <span
+                        className={`w-6 h-6 rounded-full inline-flex items-center justify-center text-xs font-bold shrink-0 tabular-nums ${
+                          isActive
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {st.id}
+                      </span>
+                      <span className="truncate">{st.label}</span>
+                      {countBadge && (
+                        <span className="ml-auto px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 tabular-nums shrink-0">
+                          {countBadge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          </header>
+
+          {/* Huvudinnehåll */}
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-16">
+            {activeStep === 1 && renderStep1Brief()}
+            {activeStep === 2 && renderStep2Participants()}
+            {activeStep === 3 && renderStep3Schedule()}
+            {activeStep === 4 && renderStep4ReviewAndExport()}
+
+            {/* Steg-navigering längst ner */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-6 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                disabled={activeStep === 1}
+                onClick={() => setActiveStep((s) => Math.max(1, s - 1))}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40 transition-colors"
+              >
+                ← Föregående steg
+              </button>
+
+              <span className="text-sm font-medium text-slate-600 tabular-nums">
+                Steg {activeStep} av {STEPS.length}
+              </span>
+
+              {activeStep < 4 ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveStep((s) => Math.min(4, s + 1))}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
+                >
+                  Nästa steg →
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={exportingXlsx}
+                  onClick={handleExportExcel}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-xs"
+                >
+                  {exportingXlsx ? 'Genererar .xlsx...' : 'Ladda ner Excel (.xlsx)'}
+                </button>
+              )}
+            </div>
+          </main>
+
+          {/* Diskret ångra- / statusbanner */}
+          {toastMsg && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 text-white rounded-2xl px-4 py-3 shadow-lg flex items-center gap-3 text-sm"
+            >
+              <span>{toastMsg}</span>
+              {undoSnapshot && (
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  className="px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold shrink-0"
+                >
+                  Ångra
+                </button>
+              )}
+            </div>
+          )}
+        </AppErrorBoundary>
+      );
+    }
+
+    (function mountApp() {
+      const fallbackEl = document.getElementById('cdn-fallback');
+      if (fallbackEl) {
+        fallbackEl.style.display = 'none';
+      }
+      const rootNode = document.getElementById('root');
+      if (rootNode && window.ReactDOM && window.ReactDOM.createRoot) {
+        const root = window.ReactDOM.createRoot(rootNode);
+        root.render(<KorschemaStudioApp />);
+      }
+    })();
+  </script>
+</body>
+</html>
